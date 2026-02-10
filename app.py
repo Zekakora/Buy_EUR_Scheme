@@ -11,10 +11,15 @@ import plotly.graph_objects as go
 
 from services.db import (
     init_db, upsert_rates, get_rates_wide, get_latest_date,
-    insert_purchase, list_purchases, upsert_plan, get_plan
+    insert_purchase, list_purchases, upsert_plan, get_plan,
+    get_purchase, update_purchase, delete_purchase,
+    upsert_email_alert, list_email_alerts, delete_email_alert, set_email_alert_enabled
 )
 from services.crawler import DEFAULT_BANKS, fetch_bank_history, today_shanghai, compute_next_date
 from services.strategy import cfg_from_form, cfg_to_dict, run_backtest, recommend_today, FXPlanConfigV2
+from services.alerts import check_and_send_alerts
+from services.dates import normalize_iso_date
+from services.dates import normalize_iso_date
 
 APP_TITLE = "人民币兑欧元购汇策略"
 
@@ -59,6 +64,15 @@ def create_app() -> Flask:
             flash("更新完成但有错误：" + " | ".join(errors))
         else:
             flash(f"更新成功：写入/更新 {total_rows} 行汇率数据。")
+
+        # After updating data, optionally run email alerts
+        try:
+            res = check_and_send_alerts(db_path)
+            if res.get("sent", 0) > 0:
+                flash(f"已发送邮件提醒：{res.get('sent')} 条（检查 {res.get('checked')} 条规则）。")
+        except Exception as e:
+            # do not break the update action
+            flash(f"邮件提醒检查失败：{e}")
 
         return redirect(url_for("index"))
 
@@ -128,9 +142,7 @@ def create_app() -> Flask:
             df_plot.columns = ["date", "rate"]
             df_plot = df_plot.dropna()
             df_plot["date"] = pd.to_datetime(df_plot["date"])
-
             trades_plot = trades[["date", "eur", "rate"]].copy() if len(trades) else trades
-
             if len(trades_plot):
                 trades_plot["date"] = pd.to_datetime(trades_plot["date"])
 
@@ -171,6 +183,70 @@ def create_app() -> Flask:
             kpi=kpi,
         )
 
+    @app.route("/alerts", methods=["GET", "POST"])
+    def alerts_page():
+        """Manage email alerts (email + target rate threshold)."""
+        db_path = app.config["FX_DB_PATH"]
+        banks = DEFAULT_BANKS
+        bank = request.values.get("bank", "boc")
+
+        action = request.form.get("action", "")
+        if request.method == "POST" and action == "save_alert":
+            email = (request.form.get("alert_email", "") or "").strip()
+            comparator = (request.form.get("alert_comparator", "lte") or "lte").strip()
+            try:
+                threshold_rate = float(request.form.get("alert_threshold", 0) or 0)
+                min_reco_eur = float(request.form.get("alert_min_reco_eur", 0) or 0)
+                cooldown_hours = int(float(request.form.get("alert_cooldown_hours", 24) or 24))
+            except Exception:
+                threshold_rate, min_reco_eur, cooldown_hours = 0.0, 0.0, 24
+            enabled = (request.form.get("alert_enabled", "on") or "").lower() in ("1","true","yes","y","on")
+            if not email:
+                flash("邮箱不能为空。")
+            elif threshold_rate <= 0:
+                flash("阈值汇率必须 > 0。")
+            else:
+                upsert_email_alert(
+                    db_path,
+                    bank=bank,
+                    email=email,
+                    threshold_rate=threshold_rate,
+                    comparator=comparator,
+                    min_reco_eur=min_reco_eur,
+                    enabled=enabled,
+                    cooldown_hours=cooldown_hours,
+                )
+                flash("提醒已保存。")
+            return redirect(url_for("alerts_page", bank=bank))
+
+        if request.method == "POST" and action == "delete_alert":
+            email = (request.form.get("alert_email", "") or "").strip()
+            if email:
+                delete_email_alert(db_path, bank=bank, email=email)
+                flash("已删除该提醒。")
+            return redirect(url_for("alerts_page", bank=bank))
+
+        if request.method == "POST" and action == "toggle_alert":
+            email = (request.form.get("alert_email", "") or "").strip()
+            enabled = (request.form.get("enabled", "0") or "0") in ("1","true","yes","y","on")
+            if email:
+                set_email_alert_enabled(db_path, bank=bank, email=email, enabled=enabled)
+                flash("已更新提醒开关。")
+            return redirect(url_for("alerts_page", bank=bank))
+
+        alerts_df = list_email_alerts(db_path, bank=bank)
+        alerts = []
+        if len(alerts_df):
+            alerts = alerts_df.to_dict(orient="records")
+
+        return render_template(
+            "alerts.html",
+            title=APP_TITLE,
+            banks=banks,
+            bank=bank,
+            alerts=alerts,
+        )
+
     @app.route("/realtime", methods=["GET", "POST"])
     def realtime():
         db_path = app.config["FX_DB_PATH"]
@@ -193,24 +269,51 @@ def create_app() -> Flask:
 
         action = request.form.get("action", "")
         if request.method == "POST" and action == "save_plan":
-            start_date = request.form.get("start_date", plan["start_date"])
-            end_date = request.form.get("end_date", plan["end_date"])
-            upsert_plan(db_path, bank, start_date, end_date, cfg_to_dict(cfg))
-            plan = get_plan(db_path, bank)
-            flash("计划已保存。")
+            start_raw = request.form.get("start_date", plan["start_date"])
+            end_raw = request.form.get("end_date", plan["end_date"])
+            try:
+                start_date, start_changed = normalize_iso_date(start_raw)
+                end_date, end_changed = normalize_iso_date(end_raw)
+                if start_date > end_date:
+                    raise ValueError("开始日期不能晚于结束日期")
+                upsert_plan(db_path, bank, start_date, end_date, cfg_to_dict(cfg))
+                plan = get_plan(db_path, bank)
+                if start_changed or end_changed:
+                    flash("计划日期已规范化为 YYYY-MM-DD。")
+                flash("计划已保存。")
+            except Exception as e:
+                flash(f"计划日期无效：{e}")
 
         if request.method == "POST" and action == "record_purchase":
-            date = request.form.get("purchase_date", today_shanghai())
-            eur = float(request.form.get("purchase_eur", 0))
-            rate = float(request.form.get("purchase_rate", 0))
+            date_raw = request.form.get("purchase_date", today_shanghai())
             note = request.form.get("note", "")
-            if eur > 0 and rate > 0:
+            try:
+                date, changed = normalize_iso_date(date_raw)
+            except Exception as e:
+                flash(f"日期格式不正确：{e}")
+                date = None
+                changed = False
+
+            try:
+                eur = float(request.form.get("purchase_eur", 0))
+                rate = float(request.form.get("purchase_rate", 0))
+            except Exception:
+                eur, rate = 0.0, 0.0
+
+            if date and eur > 0 and rate > 0:
                 insert_purchase(db_path, bank, date, eur, rate, note)
+                if changed:
+                    flash("购汇日期已规范化为 YYYY-MM-DD。")
                 flash("已记录本次购汇。")
+            elif date:
+                flash("购入欧元金额与汇率必须为正数。")
+
+        # Purchase edit/delete actions are handled by dedicated routes.
 
         # Data
         df_wide = get_rates_wide(db_path, banks=[bank])
         purchases = list_purchases(db_path, bank=bank)
+        alerts = list_email_alerts(db_path, bank=bank)
         bought_so_far = float(purchases["eur"].sum()) if len(purchases) else 0.0
         num_trades = int(len(purchases)) if len(purchases) else 0
         last_trade_date = str(purchases["date"].iloc[0]) if len(purchases) else None  # sorted desc
@@ -254,10 +357,19 @@ def create_app() -> Flask:
         else:
             flash("数据库暂无汇率数据，请先点首页的“更新数据”。")
 
-        purchases_html = None
+        purchases_rows = []
         if len(purchases):
             purchases_show = purchases.copy()
-            purchases_html = purchases_show.to_html(index=False, classes="display", table_id="purchasesTable")
+            # Ensure date is rendered as ISO string
+            purchases_show["date"] = purchases_show["date"].astype(str)
+            purchases_rows = purchases_show.to_dict(orient="records")
+
+        alerts_html = None
+        if len(alerts):
+            a = alerts.copy()
+            # nicer display
+            a["enabled"] = a["enabled"].apply(lambda x: "on" if int(x)==1 else "off")
+            alerts_html = a.to_html(index=False, classes="display", table_id="alertsTable")
 
         return render_template(
             "realtime.html",
@@ -269,8 +381,57 @@ def create_app() -> Flask:
             latest=latest,
             reco=reco,
             plot_json=plot_json,
-            purchases_html=purchases_html
+            purchases_rows=purchases_rows,
+            alerts_html=alerts_html
         )
+
+    @app.route("/purchase/edit/<int:purchase_id>", methods=["GET", "POST"])
+    def purchase_edit(purchase_id: int):
+        db_path = app.config["FX_DB_PATH"]
+        bank = request.values.get("bank", "")
+
+        p = get_purchase(db_path, purchase_id)
+        if not p:
+            flash("未找到该购汇记录。")
+            return redirect(url_for("realtime", bank=bank or "boc"))
+
+        # bank fallback from record
+        bank = bank or p.get("bank") or "boc"
+
+        if request.method == "POST":
+            date_raw = request.form.get("date", p["date"])
+            note = request.form.get("note", "")
+            try:
+                date, changed = normalize_iso_date(date_raw)
+                eur = float(request.form.get("eur", p["eur"]))
+                rate = float(request.form.get("rate", p["rate"]))
+                if eur <= 0 or rate <= 0:
+                    raise ValueError("购入欧元金额与汇率必须为正数")
+                update_purchase(db_path, purchase_id, date, eur, rate, note)
+                if changed:
+                    flash("日期已规范化为 YYYY-MM-DD。")
+                flash("购汇记录已更新。")
+                return redirect(url_for("realtime", bank=bank))
+            except Exception as e:
+                flash(f"保存失败：{e}")
+
+        return render_template(
+            "purchase_edit.html",
+            title=APP_TITLE,
+            bank=bank,
+            purchase=p,
+        )
+
+    @app.route("/purchase/delete/<int:purchase_id>", methods=["POST"])
+    def purchase_delete(purchase_id: int):
+        db_path = app.config["FX_DB_PATH"]
+        bank = request.values.get("bank", "boc")
+        try:
+            delete_purchase(db_path, purchase_id)
+            flash("已删除购汇记录。")
+        except Exception as e:
+            flash(f"删除失败：{e}")
+        return redirect(url_for("realtime", bank=bank))
 
     return app
 

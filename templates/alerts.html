@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <div class="card">
+    <h1>提醒设置</h1>
+
+    <form method="get" style="max-width:520px;">
+      <label>选择银行</label>
+      <select name="bank" onchange="this.form.submit()">
+        {% for b in banks %}
+          <option value="{{ b }}" {% if b==bank %}selected{% endif %}>{{ b }}</option>
+        {% endfor %}
+      </select>
+    </form>
+
+    <hr style="border:none;border-top:1px solid #eee; margin: 14px 0;">
+
+    <h2>新增 / 更新提醒</h2>
+    <form method="post" style="max-width:520px;">
+      <input type="hidden" name="bank" value="{{ bank }}">
+      <input type="hidden" name="action" value="save_alert">
+
+      <label>提醒邮箱</label>
+      <input name="alert_email" placeholder="name@example.com" value="">
+
+      <label>触发阈值汇率（CNY/EUR）</label>
+      <input name="alert_threshold" placeholder="例如 7.80" value="">
+
+      <label>比较方式</label>
+      <select name="alert_comparator">
+        <option value="lte" selected>当汇率 ≤ 阈值（更常用）</option>
+        <option value="gte">当汇率 ≥ 阈值</option>
+      </select>
+
+      <label>最小建议买入（EUR，可选）</label>
+      <input name="alert_min_reco_eur" placeholder="默认 0" value="">
+
+      <label>提醒冷却时间（小时）</label>
+      <input name="alert_cooldown_hours" placeholder="默认 24" value="24">
+
+      <label>
+        <input type="checkbox" name="alert_enabled" checked>
+        启用
+      </label>
+
+      <div style="margin-top:10px;">
+        <button type="submit">保存</button>
+      </div>
+
+      <p><small class="muted">
+        触发条件：<b>策略建议买入</b> 且 <b>汇率达到阈值</b>（按比较方式判断）。
+        邮件发送发生在你执行“更新数据”时（推荐用定时任务每天跑一次）。
+      </small></p>
+    </form>
+
+    <hr style="border:none;border-top:1px solid #eee; margin: 14px 0;">
+
+    <h2>当前提醒规则</h2>
+    {% if alerts and alerts|length > 0 %}
+      <table id="alertsTable" class="display" style="width:100%">
+        <thead>
+          <tr>
+            <th>邮箱</th>
+            <th>阈值</th>
+            <th>比较</th>
+            <th>最小建议(EUR)</th>
+            <th>冷却(h)</th>
+            <th>开关</th>
+            <th>最近发送</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in alerts %}
+            <tr>
+              <td>{{ r.email }}</td>
+              <td>{{ '%.4f'|format(r.threshold_rate) }}</td>
+              <td>{% if r.comparator=='gte' %}≥{% else %}≤{% endif %}</td>
+              <td>{{ r.min_reco_eur }}</td>
+              <td>{{ r.cooldown_hours }}</td>
+              <td>{% if r.enabled==1 %}on{% else %}off{% endif %}</td>
+              <td>{{ r.last_sent_at or '' }}</td>
+              <td>
+                <form method="post" style="display:inline;">
+                  <input type="hidden" name="bank" value="{{ bank }}">
+                  <input type="hidden" name="action" value="toggle_alert">
+                  <input type="hidden" name="alert_email" value="{{ r.email }}">
+                  <input type="hidden" name="enabled" value="{% if r.enabled==1 %}0{% else %}1{% endif %}">
+                  <button type="submit">{% if r.enabled==1 %}关闭{% else %}开启{% endif %}</button>
+                </form>
+
+                <form method="post" style="display:inline;" onsubmit="return confirm('确认删除该提醒？');">
+                  <input type="hidden" name="bank" value="{{ bank }}">
+                  <input type="hidden" name="action" value="delete_alert">
+                  <input type="hidden" name="alert_email" value="{{ r.email }}">
+                  <button type="submit">删除</button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p>当前银行尚未设置提醒。</p>
+    {% endif %}
+
+    <hr style="border:none;border-top:1px solid #eee; margin: 14px 0;">
+
+    <h2>SMTP 配置提示</h2>
+    <p><small class="muted">
+      你需要在运行 Flask / 定时更新脚本的环境里设置 SMTP 环境变量，例如：
+      SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS（以及可选 SMTP_FROM）。
+      很多邮箱需要“应用专用密码/授权码”，不能直接用网页登录密码。
+    </small></p>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    $(document).ready(function() {
+      if ($('#alertsTable').length) $('#alertsTable').DataTable({pageLength: 20, scrollX: true});
+    });
+  </script>
+{% endblock %}

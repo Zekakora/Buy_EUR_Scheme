@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="card">
+    <h1>编辑购汇记录</h1>
+    <p><small class="muted">bank={{ bank }}，id={{ purchase.id }}</small></p>
+
+    <form method="post">
+      <input type="hidden" name="bank" value="{{ bank }}">
+
+      <label>日期（YYYY-MM-DD）</label>
+      <input type="date" name="date" value="{{ purchase.date }}" placeholder="YYYY-MM-DD">
+
+      <label>购入欧元金额（EUR）</label>
+      <input name="eur" value="{{ purchase.eur }}">
+
+      <label>实际成交汇率（CNY/EUR）</label>
+      <input name="rate" value="{{ purchase.rate }}">
+
+      <label>备注（可选）</label>
+      <input name="note" value="{{ purchase.note }}">
+
+      <div style="margin-top:12px; display:flex; gap:10px;">
+        <button type="submit">保存修改</button>
+        <a class="secondary" href="{{ url_for('realtime', bank=bank) }}" style="text-decoration:none; display:inline-block; padding:8px 10px; border-radius:10px; background:#444; color:#fff;">取消</a>
+      </div>
+    </form>
+  </div>
+{% endblock %}

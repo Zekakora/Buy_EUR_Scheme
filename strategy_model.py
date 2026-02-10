@@ -500,7 +500,7 @@ def plot_rate_with_trades(
     out: dict,
     rate_col: str,
     date_col: str = "date",
-    window: str = "all",   # "test" or "all"
+    window: str = "test",   # "test" or "all"
     annotate: bool = True,
     annotate_offset: float = 0.0,  # 文字在y轴方向偏移（以汇率单位计）
     size_min: float = 80.0,        # 圆圈最小面积

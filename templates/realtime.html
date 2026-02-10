@@ -24,9 +24,9 @@
         <input type="hidden" name="bank" value="{{ bank }}">
         <input type="hidden" name="action" value="save_plan">
         <label>计划开始日期 start_date</label>
-        <input name="start_date" value="{{ plan.start_date }}">
+        <input type="date" name="start_date" value="{{ plan.start_date }}" placeholder="YYYY-MM-DD">
         <label>计划结束日期 end_date</label>
-        <input name="end_date" value="{{ plan.end_date }}">
+        <input type="date" name="end_date" value="{{ plan.end_date }}" placeholder="YYYY-MM-DD">
 
         <label>总目标欧元 total_eur</label>
         <input name="total_eur" value="{{ cfg.total_eur }}">
@@ -69,12 +69,18 @@
 
       <hr style="border:none;border-top:1px solid #eee; margin: 14px 0;">
 
+      <h2>邮件提醒</h2>
+      <p><small class="muted">提醒邮箱与目标汇率请在「提醒」菜单中设置。这里仅展示当前规则。</small></p>
+      <p style="margin-top:10px;">
+        <a href="{{ url_for('alerts_page', bank=bank) }}">打开提醒设置</a>
+      </p>
+
       <h2>记录今日实际购汇</h2>
       <form method="post">
         <input type="hidden" name="bank" value="{{ bank }}">
         <input type="hidden" name="action" value="record_purchase">
         <label>日期</label>
-        <input name="purchase_date" value="{{ latest.date if latest else '' }}">
+        <input type="date" name="purchase_date" value="{{ latest.date if latest else '' }}" placeholder="YYYY-MM-DD">
         <label>实际成交汇率（CNY/EUR）</label>
         <input name="purchase_rate" value="{{ latest.rate if latest else '' }}">
         <label>购入欧元金额</label>
@@ -95,10 +101,50 @@
     </div>
   {% endif %}
 
-  {% if purchases_html %}
+  {% if purchases_rows and purchases_rows|length %}
     <div class="card">
-      <h2>购汇记录</h2>
-      {{ purchases_html|safe }}
+      <h2>购汇记录（可编辑/删除）</h2>
+      <table id="purchasesTable" class="display" style="width:100%">
+        <thead>
+          <tr>
+            <th>id</th>
+            <th>date</th>
+            <th>eur</th>
+            <th>rate</th>
+            <th>cny_cost</th>
+            <th>note</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in purchases_rows %}
+            <tr>
+              <td>{{ p.id }}</td>
+              <td>{{ p.date }}</td>
+              <td>{{ '%.2f'|format(p.eur) }}</td>
+              <td>{{ '%.6f'|format(p.rate) }}</td>
+              <td>{{ '%.2f'|format(p.cny_cost) }}</td>
+              <td>{{ p.note }}</td>
+              <td>
+                <a href="{{ url_for('purchase_edit', purchase_id=p.id, bank=bank) }}">编辑</a>
+                <span class="muted">|</span>
+                <form method="post" action="{{ url_for('purchase_delete', purchase_id=p.id, bank=bank) }}" style="display:inline;" onsubmit="return confirm('确定删除这条购汇记录？');">
+                  <button type="submit" class="linklike">删除</button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p><small class="muted">提示：日期支持自动规范化为 YYYY-MM-DD。</small></p>
+    </div>
+  {% endif %}
+
+  {% if alerts_html %}
+    <div class="card">
+      <h2>当前提醒规则</h2>
+      {{ alerts_html|safe }}
+      <p><small class="muted">管理提醒请前往「提醒」菜单。</small></p>
     </div>
   {% endif %}
 {% endblock %}
@@ -117,6 +163,7 @@
   <script>
     $(document).ready(function() {
       if ($('#purchasesTable').length) $('#purchasesTable').DataTable({pageLength: 20, scrollX: true});
+      if ($('#alertsTable').length) $('#alertsTable').DataTable({pageLength: 20, scrollX: true});
     });
   </script>
 {% endblock %}

@@ -12,6 +12,9 @@ label { display:block; font-size: 13px; margin: 8px 0 4px; opacity: 0.85; }
 input, select, button, textarea { width: 100%; padding: 8px 10px; border: 1px solid #d9d9d9; border-radius: 10px; font-size: 14px; }
 button { cursor: pointer; background: #111; color: #fff; border: 0; }
 button.secondary { background: #444; }
+button.linklike { width: auto; padding: 0; background: none; color: #1a73e8; border: 0; display: inline; }
+button.linklike:hover { text-decoration: underline; }
+form { margin: 0; }
 small.muted { opacity: 0.75; }
 .kpi { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 @media (max-width: 900px) { .kpi { grid-template-columns: repeat(2, 1fr); } }
