@@ -9,3 +9,5 @@ gunicorn
 matplotlib
 sqlite3
 typing
+pathlib
+dataclasses
