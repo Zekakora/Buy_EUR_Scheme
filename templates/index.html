@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="card">
+    <h1>你现在可以做什么</h1>
+    <p>这个网站分为两个模式：</p>
+    <p>1）验证模式：用历史数据回测你的分批购汇策略，输出汇率走势 + 购汇点标记 + 交易表。</p>
+    <p>2）实时模式：每天更新汇率后，给出“今天是否建议买、建议买多少”，并允许你手动记录实际成交汇率与金额。</p>
+    <p><small class="muted">提示：首次使用请先点右上角“更新数据”。</small></p>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>验证模式</h2>
+      <p>选择银行（boc/icbc/ccb…），设置回测参数，查看策略在最近 N 天的表现。</p>
+      <a href="{{ url_for('backtest') }}">进入验证模式 →</a>
+    </div>
+
+    <div class="card">
+      <h2>实时模式</h2>
+      <p>查看最新汇率、策略建议、以及你手动记录的购汇历史。</p>
+      <a href="{{ url_for('realtime') }}">进入实时模式 →</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>数据源与说明</h2>
+    <p>当前示例爬虫抓取 kylc.com 的各银行欧元现汇卖出价，并按天存入数据库；你也可以换成更可靠/更合规的数据源（比如官方接口或付费数据）。</p>
+  </div>
+{% endblock %}

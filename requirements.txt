@@ -1,0 +1,7 @@
+flask>=2.2
+pandas>=2.0
+numpy>=1.24
+requests>=2.31
+beautifulsoup4>=4.12
+lxml>=4.9
+plotly>=5.18

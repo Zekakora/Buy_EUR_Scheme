@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="card">
+    <h1>验证模式（历史回测）</h1>
+    <form method="post">
+      <div class="grid">
+        <div>
+          <label>银行</label>
+          <select name="bank">
+            {% for b in banks %}
+              <option value="{{ b }}" {% if b==bank %}selected{% endif %}>{{ b }}</option>
+            {% endfor %}
+          </select>
+          <label>回测天数 N_test（用最近 N 天作为“在线决策期”）</label>
+          <input name="n_test" value="{{ n_test }}">
+        </div>
+
+        <div>
+          <label>总目标欧元 total_eur</label>
+          <input name="total_eur" value="{{ cfg.total_eur }}">
+          <label>最大交易笔数 max_trades</label>
+          <input name="max_trades" value="{{ cfg.max_trades }}">
+          <label>最小间隔天数 min_interval_days</label>
+          <input name="min_interval_days" value="{{ cfg.min_interval_days }}">
+        </div>
+      </div>
+
+      <div class="grid">
+        <div>
+          <label>单笔最小欧元 min_trade_eur</label>
+          <input name="min_trade_eur" value="{{ cfg.min_trade_eur }}">
+          <label>单笔最大欧元 max_trade_eur</label>
+          <input name="max_trade_eur" value="{{ cfg.max_trade_eur }}">
+        </div>
+        <div>
+          <label>最后强制期 last_k_days_force</label>
+          <input name="last_k_days_force" value="{{ cfg.last_k_days_force }}">
+          <label>分位数跳过阈值 skip_if_q_ge（越小越谨慎）</label>
+          <input name="skip_if_q_ge" value="{{ cfg.skip_if_q_ge }}">
+        </div>
+      </div>
+
+      <div style="margin-top:10px;">
+        <button type="submit">运行回测</button>
+      </div>
+      <p><small class="muted">更多参数（走廊宽度、gamma、regime 等）也可以继续加到表单里；目前先放 MVP。</small></p>
+    </form>
+  </div>
+
+  {% if kpi %}
+    <div class="card">
+      <h2>回测摘要</h2>
+      <div class="kpi">
+        <div class="box"><div>完成？</div><div class="v">{{ "是" if kpi.completed else "否" }}</div></div>
+        <div class="box"><div>已购 EUR</div><div class="v">{{ kpi.bought_total_eur }}</div></div>
+        <div class="box"><div>剩余 EUR</div><div class="v">{{ kpi.remaining_eur }}</div></div>
+        <div class="box"><div>交易笔数</div><div class="v">{{ kpi.num_trades }}</div></div>
+      </div>
+      <div class="kpi" style="margin-top:10px;">
+        <div class="box"><div>平均汇率</div><div class="v">{{ kpi.avg_rate }}</div></div>
+        <div class="box"><div>总人民币开销</div><div class="v">{{ kpi.total_cny_cost }}</div></div>
+        <div class="box"><div>回测区间</div><div class="v">{{ kpi.test_start }} ~ {{ kpi.test_end }}</div></div>
+        <div class="box"><div>提示</div><div class="v">可缩放图表</div></div>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if plot_json %}
+    <div class="card">
+      <h2>汇率走势 & 购汇标记（圆点大小=金额，文字=EUR）</h2>
+      <div id="chart"></div>
+    </div>
+  {% endif %}
+
+  {% if trades_html %}
+    <div class="card">
+      <h2>交易明细</h2>
+      {{ trades_html|safe }}
+    </div>
+  {% endif %}
+
+  {% if daily_html %}
+    <div class="card">
+      <h2>每日状态（仅展示最近 180 行）</h2>
+      {{ daily_html|safe }}
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block scripts %}
+  {% if plot_json %}
+    <script>
+      const fig = {{ plot_json|safe }};
+      Plotly.newPlot('chart', fig.data, fig.layout, {
+        responsive: true,
+        scrollZoom: true,
+        displayModeBar: true
+      });
+    </script>
+  {% endif %}
+  <script>
+    $(document).ready(function() {
+      if ($('#tradesTable').length) $('#tradesTable').DataTable({pageLength: 20, scrollX: true});
+      if ($('#dailyTable').length) $('#dailyTable').DataTable({pageLength: 20, scrollX: true});
+    });
+  </script>
+{% endblock %}

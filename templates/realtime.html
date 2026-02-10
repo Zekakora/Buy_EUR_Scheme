@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="card">
+    <h1>实时模式（每日建议 + 手动记账）</h1>
+
+    <form method="get">
+      <label>选择银行</label>
+      <select name="bank" onchange="this.form.submit()">
+        {% for b in banks %}
+          <option value="{{ b }}" {% if b==bank %}selected{% endif %}>{{ b }}</option>
+        {% endfor %}
+      </select>
+    </form>
+
+    {% if latest %}
+      <p style="margin-top:10px;"><b>最新汇率</b>：{{ latest.date }} / {{ latest.rate }}</p>
+    {% endif %}
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>计划参数</h2>
+      <form method="post">
+        <input type="hidden" name="bank" value="{{ bank }}">
+        <input type="hidden" name="action" value="save_plan">
+        <label>计划开始日期 start_date</label>
+        <input name="start_date" value="{{ plan.start_date }}">
+        <label>计划结束日期 end_date</label>
+        <input name="end_date" value="{{ plan.end_date }}">
+
+        <label>总目标欧元 total_eur</label>
+        <input name="total_eur" value="{{ cfg.total_eur }}">
+        <label>最大交易笔数 max_trades</label>
+        <input name="max_trades" value="{{ cfg.max_trades }}">
+        <label>最小间隔天数 min_interval_days</label>
+        <input name="min_interval_days" value="{{ cfg.min_interval_days }}">
+
+        <label>单笔最小欧元 min_trade_eur</label>
+        <input name="min_trade_eur" value="{{ cfg.min_trade_eur }}">
+        <label>单笔最大欧元 max_trade_eur</label>
+        <input name="max_trade_eur" value="{{ cfg.max_trade_eur }}">
+
+        <div style="margin-top:10px;">
+          <button type="submit">保存计划</button>
+        </div>
+        <p><small class="muted">你也可以把更多 cfg 参数继续加到表单里，实时模式会直接使用。</small></p>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>今日建议</h2>
+      {% if reco and reco.ok %}
+        <div class="kpi">
+          <div class="box"><div>建议买入（EUR）</div><div class="v">{{ reco.recommend_eur }}</div></div>
+          <div class="box"><div>是否建议交易</div><div class="v">{{ "是" if reco.would_trade else "否" }}</div></div>
+          <div class="box"><div>剩余 EUR</div><div class="v">{{ reco.remaining }}</div></div>
+          <div class="box"><div>模式</div><div class="v">{{ reco.mode }}</div></div>
+        </div>
+        <p style="margin-top:10px;"><b>原因</b>：{{ reco.reasons }}</p>
+        <p><small class="muted">
+          q={{ reco.q }} / z={{ reco.z }}，
+          进度 target={{ reco.target_ratio }}（上下界 {{ reco.lower_ratio }}~{{ reco.upper_ratio }}）
+        </small></p>
+      {% elif reco %}
+        <p>{{ reco.error }}</p>
+      {% else %}
+        <p>暂无建议（可能还没数据）。</p>
+      {% endif %}
+
+      <hr style="border:none;border-top:1px solid #eee; margin: 14px 0;">
+
+      <h2>记录今日实际购汇</h2>
+      <form method="post">
+        <input type="hidden" name="bank" value="{{ bank }}">
+        <input type="hidden" name="action" value="record_purchase">
+        <label>日期</label>
+        <input name="purchase_date" value="{{ latest.date if latest else '' }}">
+        <label>实际成交汇率（CNY/EUR）</label>
+        <input name="purchase_rate" value="{{ latest.rate if latest else '' }}">
+        <label>购入欧元金额</label>
+        <input name="purchase_eur" value="{{ reco.recommend_eur if reco and reco.ok else '' }}">
+        <label>备注（可选）</label>
+        <input name="note" value="">
+        <div style="margin-top:10px;">
+          <button type="submit">保存记录</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {% if plot_json %}
+    <div class="card">
+      <h2>汇率走势 & 你的购汇记录（最近 220 行）</h2>
+      <div id="chart"></div>
+    </div>
+  {% endif %}
+
+  {% if purchases_html %}
+    <div class="card">
+      <h2>购汇记录</h2>
+      {{ purchases_html|safe }}
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block scripts %}
+  {% if plot_json %}
+    <script>
+      const fig = {{ plot_json|safe }};
+      Plotly.newPlot('chart', fig.data, fig.layout, {
+        responsive: true,
+        scrollZoom: true,
+        displayModeBar: true
+      });
+    </script>
+  {% endif %}
+  <script>
+    $(document).ready(function() {
+      if ($('#purchasesTable').length) $('#purchasesTable').DataTable({pageLength: 20, scrollX: true});
+    });
+  </script>
+{% endblock %}
