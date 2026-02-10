@@ -20,7 +20,7 @@ from typing import Optional, Dict, Tuple
 # =========================
 @dataclass
 class FXPlanConfigV2:
-    total_eur: float = 12500.0
+    total_eur: float = 12600.0
 
     # trade constraints
     max_trades: int = 18
