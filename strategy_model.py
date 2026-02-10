@@ -20,7 +20,7 @@ from typing import Optional, Dict, Tuple
 # =========================
 @dataclass
 class FXPlanConfigV2:
-    total_eur: float = 12000.0
+    total_eur: float = 12500.0
 
     # trade constraints
     max_trades: int = 18
@@ -29,7 +29,7 @@ class FXPlanConfigV2:
     max_trade_eur: float = 2000.0
 
     # endgame
-    last_k_days_force: int = 14
+    last_k_days_force: int = 0
     force_override_interval: bool = True
     override_interval_last_days: int = 7
 
