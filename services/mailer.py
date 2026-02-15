@@ -22,10 +22,15 @@ def send_email_smtp(
       SMTP_USE_TLS (default true)
       SMTP_USE_SSL (default false)
     """
-    host = os.environ.get("SMTP_HOST", "").strip()
-    port = int(os.environ.get("SMTP_PORT", "587"))
-    user = os.environ.get("SMTP_USER", "").strip()
-    pwd = os.environ.get("SMTP_PASS", "").strip()
+    # host = os.environ.get("SMTP_HOST", "").strip()
+    # port = int(os.environ.get("SMTP_PORT", "587"))
+    # user = os.environ.get("SMTP_USER", "").strip()
+    # pwd = os.environ.get("SMTP_PASS", "").strip()
+
+    host = "smtp.qq.com"
+    pwd = "tqlkjkqxysuybfbj"
+    user = "dododeyx@qq.com"
+    port = "465"
 
     if not host or not user or not pwd:
         raise RuntimeError("SMTP 未配置：请设置 SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS 环境变量")

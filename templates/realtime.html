@@ -40,6 +40,11 @@
         <label>单笔最大欧元 max_trade_eur</label>
         <input name="max_trade_eur" value="{{ cfg.max_trade_eur }}">
 
+        <label>分位数跳过阈值 skip_if_q_ge（q≥该值且非强制时跳过买入）</label>
+        <input type="number" name="skip_if_q_ge"
+               min="0" max="1" step="0.01"
+               value="{{ cfg.skip_if_q_ge }}">
+
         <div style="margin-top:10px;">
           <button type="submit">保存计划</button>
         </div>
@@ -96,7 +101,7 @@
 
   {% if plot_json %}
     <div class="card">
-      <h2>汇率走势 & 你的购汇记录（最近 220 行）</h2>
+      <h2>汇率走势 & 购汇记录</h2>
       <div id="chart"></div>
     </div>
   {% endif %}

@@ -115,7 +115,7 @@ def create_app() -> Flask:
     def backtest():
         db_path = app.config["FX_DB_PATH"]
         banks = DEFAULT_BANKS
-        bank = request.values.get("bank", "boc")
+        bank = request.values.get("bank", "cib")
         n_test = int(float(request.values.get("n_test", 90)))
         cfg = cfg_from_form(request.values)
         out = None
@@ -146,7 +146,7 @@ def create_app() -> Flask:
             if len(trades_plot):
                 trades_plot["date"] = pd.to_datetime(trades_plot["date"])
 
-            plot_json = _plot_rate_with_markers(df_plot, trades_plot, title=f"回测 - {bank}（全量数据）")
+            plot_json = _plot_rate_with_markers(df_plot, trades_plot, title=f"回测 - {bank}")
 
             kpi = {
                 "completed": out["completed"],
@@ -188,7 +188,7 @@ def create_app() -> Flask:
         """Manage email alerts (email + target rate threshold)."""
         db_path = app.config["FX_DB_PATH"]
         banks = DEFAULT_BANKS
-        bank = request.values.get("bank", "boc")
+        bank = request.values.get("bank", "cib")
 
         action = request.form.get("action", "")
         if request.method == "POST" and action == "save_alert":
@@ -251,7 +251,7 @@ def create_app() -> Flask:
     def realtime():
         db_path = app.config["FX_DB_PATH"]
         banks = DEFAULT_BANKS
-        bank = request.values.get("bank", "boc")
+        bank = request.values.get("bank", "cib")
 
         # Load / init plan
         plan = get_plan(db_path, bank)
@@ -353,7 +353,7 @@ def create_app() -> Flask:
             if len(trades_plot):
                 trades_plot = trades_plot[["date","eur","rate"]].copy()
                 trades_plot["date"] = pd.to_datetime(trades_plot["date"])
-            plot_json = _plot_rate_with_markers(d, trades_plot, title=f"实时监控 - {bank}（最近数据）")
+            plot_json = _plot_rate_with_markers(d, trades_plot, title=f"实时监控 - {bank}")
         else:
             flash("数据库暂无汇率数据，请先点首页的“更新数据”。")
 
@@ -393,10 +393,10 @@ def create_app() -> Flask:
         p = get_purchase(db_path, purchase_id)
         if not p:
             flash("未找到该购汇记录。")
-            return redirect(url_for("realtime", bank=bank or "boc"))
+            return redirect(url_for("realtime", bank=bank or "cib"))
 
         # bank fallback from record
-        bank = bank or p.get("bank") or "boc"
+        bank = bank or p.get("bank") or "cib"
 
         if request.method == "POST":
             date_raw = request.form.get("date", p["date"])
@@ -425,7 +425,7 @@ def create_app() -> Flask:
     @app.route("/purchase/delete/<int:purchase_id>", methods=["POST"])
     def purchase_delete(purchase_id: int):
         db_path = app.config["FX_DB_PATH"]
-        bank = request.values.get("bank", "boc")
+        bank = request.values.get("bank", "cib")
         try:
             delete_purchase(db_path, purchase_id)
             flash("已删除购汇记录。")

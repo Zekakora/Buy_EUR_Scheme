@@ -20,12 +20,12 @@ from typing import Optional, Dict, Tuple
 # =========================
 @dataclass
 class FXPlanConfigV2:
-    total_eur: float = 12600.0
+    total_eur: float = 12200.0
 
     # trade constraints
     max_trades: int = 18
     min_interval_days: int = 5
-    min_trade_eur: float = 200.0
+    min_trade_eur: float = 100.0
     max_trade_eur: float = 2000.0
 
     # endgame
@@ -178,45 +178,124 @@ def _cheap_score(q: float, z: float, cfg: FXPlanConfigV2) -> float:
     s = cfg.w_q * cq + cfg.w_z * cz
     return float(min(max(s, 0.0), 1.0))
 
-def _pick_mode_and_params(known: np.ndarray, cfg: FXPlanConfigV2) -> Dict[str, float]:
+# def _pick_mode_and_params(known: np.ndarray, cfg: FXPlanConfigV2) -> Dict[str, float]:
+#     """
+#     Decide mode (progress vs opportunity) using vol + trend.
+#     Return dict with gamma, corridor_halfwidth, slack, base_floor, base_cap, addon_max, flags.
+#     """
+#     vol_s = _std_last(known, cfg.vol_short_window)
+#     vol_l = _std_last(known, cfg.vol_long_window)
+#     vol_ratio = np.nan
+#     if not np.isnan(vol_s) and not np.isnan(vol_l) and vol_l > 0:
+#         vol_ratio = vol_s / vol_l
+#
+#     slope_norm = _trend_slope_norm(known, cfg.trend_window)
+#     trend_up = (not np.isnan(slope_norm)) and (slope_norm >= cfg.trend_slope_th)
+#     trend_down = (not np.isnan(slope_norm)) and (slope_norm <= -cfg.trend_slope_th)
+#
+#     high_vol = (not np.isnan(vol_ratio)) and (vol_ratio >= cfg.vol_ratio_th)
+#
+#     # Mode rule: high vol OR trend up => prioritize progress
+#     mode = "progress" if (high_vol or trend_up) else "opportunity"
+#
+#     if mode == "progress":
+#         gamma = cfg.schedule_gamma_progress
+#         corridor = cfg.corridor_halfwidth_progress
+#         slack = cfg.slack_eur_progress
+#         base_floor = cfg.base_floor_progress
+#         base_cap = cfg.base_cap_progress
+#         addon_max = cfg.addon_max_progress
+#     else:
+#         gamma = cfg.schedule_gamma_opportunity
+#         corridor = cfg.corridor_halfwidth_opportunity
+#         slack = cfg.slack_eur_opportunity
+#         base_floor = cfg.base_floor_opportunity
+#         base_cap = cfg.base_cap_opportunity
+#         addon_max = cfg.addon_max_opportunity
+#
+#         # If strong downtrend (EUR getting cheaper), allow even more patience/opportunism a little
+#         if trend_down:
+#             slack *= 1.15
+#             corridor *= 1.10
+#
+#     return {
+#         "mode": mode,
+#         "vol_short": float(vol_s) if not np.isnan(vol_s) else np.nan,
+#         "vol_long": float(vol_l) if not np.isnan(vol_l) else np.nan,
+#         "vol_ratio": float(vol_ratio) if not np.isnan(vol_ratio) else np.nan,
+#         "trend_slope_norm": float(slope_norm) if not np.isnan(slope_norm) else np.nan,
+#         "gamma": float(gamma),
+#         "corridor_halfwidth": float(corridor),
+#         "slack": float(slack),
+#         "base_floor": float(base_floor),
+#         "base_cap": float(base_cap),
+#         "addon_max": float(addon_max),
+#         "trend_up": bool(trend_up),
+#         "trend_down": bool(trend_down),
+#         "high_vol": bool(high_vol),
+#     }
+
+def _pick_mode_and_params(
+        known: np.ndarray,
+        cfg: FXPlanConfigV2,
+        bought_so_far: Optional[float] = None,
+        step_idx: Optional[int] = None,
+        H: Optional[int] = None
+) -> Dict[str, float]:
     """
-    Decide mode (progress vs opportunity) using vol + trend.
-    Return dict with gamma, corridor_halfwidth, slack, base_floor, base_cap, addon_max, flags.
+    Decide mode and params, now including Dynamic Gamma logic.
     """
+    # 1. 基础状态检测（保持原逻辑）
     vol_s = _std_last(known, cfg.vol_short_window)
     vol_l = _std_last(known, cfg.vol_long_window)
-    vol_ratio = np.nan
-    if not np.isnan(vol_s) and not np.isnan(vol_l) and vol_l > 0:
-        vol_ratio = vol_s / vol_l
+    vol_ratio = vol_s / vol_l if (vol_s and vol_l and vol_l > 0) else np.nan
 
     slope_norm = _trend_slope_norm(known, cfg.trend_window)
     trend_up = (not np.isnan(slope_norm)) and (slope_norm >= cfg.trend_slope_th)
     trend_down = (not np.isnan(slope_norm)) and (slope_norm <= -cfg.trend_slope_th)
-
     high_vol = (not np.isnan(vol_ratio)) and (vol_ratio >= cfg.vol_ratio_th)
 
-    # Mode rule: high vol OR trend up => prioritize progress
-    mode = "progress" if (high_vol or trend_up) else "opportunity"
-
-    if mode == "progress":
-        gamma = cfg.schedule_gamma_progress
+    # 2. 确定基础模式与参数
+    if high_vol or trend_up:
+        mode = "progress"
+        base_gamma = cfg.schedule_gamma_progress
         corridor = cfg.corridor_halfwidth_progress
         slack = cfg.slack_eur_progress
         base_floor = cfg.base_floor_progress
         base_cap = cfg.base_cap_progress
         addon_max = cfg.addon_max_progress
     else:
-        gamma = cfg.schedule_gamma_opportunity
+        mode = "opportunity"
+        base_gamma = cfg.schedule_gamma_opportunity
         corridor = cfg.corridor_halfwidth_opportunity
         slack = cfg.slack_eur_opportunity
         base_floor = cfg.base_floor_opportunity
         base_cap = cfg.base_cap_opportunity
         addon_max = cfg.addon_max_opportunity
 
-        # If strong downtrend (EUR getting cheaper), allow even more patience/opportunism a little
-        if trend_down:
-            slack *= 1.15
-            corridor *= 1.10
+    # 3. 动态 Gamma 修正逻辑
+    dynamic_gamma = base_gamma
+
+    # A. 进度修正：如果已购比例超过目标比例，提高 Gamma (变得更耐心)
+    if bought_so_far is not None and step_idx is not None and H is not None:
+        current_bought_ratio = bought_so_far / cfg.total_eur
+        # 计算当前模式下的理想目标比例
+        target_ratio = _schedule_ratio(step_idx, H, base_gamma)
+
+        # 领先量 (Lead)
+        lead = current_bought_ratio - target_ratio
+        if lead > 0:
+            # 领先越多，Gamma 越高，最高在原基础上 +0.5
+            # 例如：领先 10% 进度，Gamma 增加 0.2
+            gamma_boost = min(0.5, lead * 2.0)
+            dynamic_gamma += gamma_boost
+
+    # B. 趋势修正：如果处于强下行趋势，额外增加 Gamma (顺势等待更低点)
+    if trend_down:
+        dynamic_gamma += 0.15
+        # 同时放宽走廊和容忍度 (保持原 logic)
+        slack *= 1.15
+        corridor *= 1.10
 
     return {
         "mode": mode,
@@ -224,7 +303,7 @@ def _pick_mode_and_params(known: np.ndarray, cfg: FXPlanConfigV2) -> Dict[str, f
         "vol_long": float(vol_l) if not np.isnan(vol_l) else np.nan,
         "vol_ratio": float(vol_ratio) if not np.isnan(vol_ratio) else np.nan,
         "trend_slope_norm": float(slope_norm) if not np.isnan(slope_norm) else np.nan,
-        "gamma": float(gamma),
+        "gamma": float(dynamic_gamma),  # 返回动态计算后的 Gamma
         "corridor_halfwidth": float(corridor),
         "slack": float(slack),
         "base_floor": float(base_floor),
@@ -305,7 +384,11 @@ def simulate_walk_forward_fx_plan_v2(
         eff_known = known_rates_full[regime_start_idx:]
 
         # -------- volatility / trend adaptive params (use effective history) --------
-        state = _pick_mode_and_params(eff_known, cfg)
+        # state = _pick_mode_and_params(eff_known, cfg)
+
+        # 在循环内部修改调用（引入动态gamma)
+        state = _pick_mode_and_params(eff_known, cfg,  bought_so_far=bought, step_idx=i, H=H)
+
         gamma = state["gamma"]
         corridor_halfwidth = state["corridor_halfwidth"]
         slack = state["slack"]
